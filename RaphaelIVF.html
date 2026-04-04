@@ -687,6 +687,7 @@
     <div id="logDetailBody" style="padding:20px;display:flex;flex-direction:column;gap:14px"></div>
     <div class="form-actions">
       <button class="btn btn-danger" id="logDetailDelBtn">刪除</button>
+      <button class="btn btn-ghost" id="logDetailEditBtn">✏️ 編輯</button>
       <button class="btn btn-ghost" onclick="closeModal('dailyLogDetailModal')">關閉</button>
     </div>
   </div>
@@ -2742,19 +2743,35 @@ async function delProject(projId, fromDetail=false) {
 // ── 業務日報 ──────────────────────────────────────────────────
 let _logSortAsc = false;
 
-async function openDailyLogModal() {
-  document.getElementById('dailyLogModalTitle').textContent = '新增拜訪紀錄';
-  document.getElementById('logDate').value = nowTW().toISOString().split('T')[0];
-  document.getElementById('logContact').value = '';
-  document.getElementById('logContent').value = '';
-  document.getElementById('logAction').value = '';
-  document.getElementById('logNote').value = '';
-  document.getElementById('logType').value = '出貨拜訪';
+let _logEditId = null;
+
+async function openDailyLogModal(editId=null) {
+  _logEditId = editId;
+  document.getElementById('dailyLogModalTitle').textContent = editId ? '編輯拜訪紀錄' : '新增拜訪紀錄';
+
   const hospitals = await apiGet('院所資料');
   const hospOpts = hospitals.map(h=>({value:h['院所ID'], label:`${h['院所簡稱']} - ${h['院所名稱']}`, simple:h['院所簡稱']||h['院所名稱']}));
   window._logHospData = hospOpts;
   document.getElementById('logHospWrap').innerHTML = '';
   createSearchableSelect('logHospWrap', hospOpts, ()=>{}, '選擇院所...');
+
+  if(editId) {
+    const data = await apiGet('業務日報');
+    const r = data.find(d=>d['紀錄ID']===editId);
+    if(r) {
+      document.getElementById('logDate').value = r['日期']||'';
+      document.getElementById('logContact').value = r['聯絡人']||'';
+      document.getElementById('logType').value = r['拜訪類型']||'出貨拜訪';
+      document.getElementById('logContent').value = r['討論內容']||'';
+      document.getElementById('logAction').value = r['後續行動']||'';
+      document.getElementById('logNote').value = r['備註']||'';
+      setTimeout(()=>{ document.getElementById('logHospWrap')._setValue?.(r['院所ID']||''); }, 100);
+    }
+  } else {
+    document.getElementById('logDate').value = nowTW().toISOString().split('T')[0];
+    ['logContact','logContent','logAction','logNote'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('logType').value = '出貨拜訪';
+  }
   document.getElementById('logSaveBtn').onclick = saveDailyLog;
   document.getElementById('dailyLogModal').classList.add('open');
 }
@@ -2766,17 +2783,38 @@ async function saveDailyLog() {
   const hospData = (window._logHospData||[]).find(h=>h.value===hospId);
   const hospSimple = hospData?.simple || hospId;
   if(!date || !hospId) { toast('請填寫日期和院所','error'); return; }
-  const d = new Date(date);
-  const prefix = `LG${String(d.getFullYear()).slice(-2)}${String(d.getMonth()+1).padStart(2,'0')}`;
-  const existing = await apiGet('業務日報');
-  const count = existing.filter(r=>r['紀錄ID']?.startsWith(prefix)).length;
-  const logId = `${prefix}${String(count+1).padStart(3,'0')}`;
+
+  const row = {
+    '日期': date, '院所ID': hospId, '院所簡稱': hospSimple,
+    '聯絡人': document.getElementById('logContact').value,
+    '拜訪類型': document.getElementById('logType').value,
+    '討論內容': document.getElementById('logContent').value,
+    '後續行動': document.getElementById('logAction').value,
+    '備註': document.getElementById('logNote').value,
+  };
+
   const btn = document.getElementById('logSaveBtn');
   btn.textContent='儲存中...'; btn.disabled=true;
-  const res = await apiAdd('業務日報', {'紀錄ID':logId,'日期':date,'院所ID':hospId,'院所簡稱':hospSimple,'聯絡人':document.getElementById('logContact').value,'拜訪類型':document.getElementById('logType').value,'討論內容':document.getElementById('logContent').value,'後續行動':document.getElementById('logAction').value,'備註':document.getElementById('logNote').value});
+
+  let res;
+  if(_logEditId) {
+    res = await apiUpdate('業務日報', row, '紀錄ID', _logEditId);
+  } else {
+    const d = new Date(date);
+    const prefix = `LG${String(d.getFullYear()).slice(-2)}${String(d.getMonth()+1).padStart(2,'0')}`;
+    const existing = await apiGet('業務日報');
+    const count = existing.filter(r=>r['紀錄ID']?.startsWith(prefix)).length;
+    row['紀錄ID'] = `${prefix}${String(count+1).padStart(3,'0')}`;
+    res = await apiAdd('業務日報', row);
+  }
+
   btn.textContent='儲存'; btn.disabled=false;
-  if(res.success) { toast('拜訪紀錄已儲存','success'); closeModal('dailyLogModal'); loadDailyLog(); }
-  else toast('儲存失敗，請重試','error');
+  if(res.success) {
+    toast(_logEditId ? '紀錄已更新' : '拜訪紀錄已儲存', 'success');
+    closeModal('dailyLogModal');
+    closeModal('dailyLogDetailModal');
+    loadDailyLog();
+  } else toast('儲存失敗，請重試','error');
 }
 
 async function loadDailyLog() {
@@ -2857,6 +2895,7 @@ async function openDailyLogDetail(logId) {
     <div style="font-size:14px;color:var(--text-primary)">${v}</div>
   </div>`).join('');
   document.getElementById('logDetailDelBtn').onclick = ()=>delDailyLog(logId, true);
+  document.getElementById('logDetailEditBtn').onclick = ()=>{ closeModal('dailyLogDetailModal'); openDailyLogModal(logId); };
   document.getElementById('dailyLogDetailModal').classList.add('open');
 }
 
