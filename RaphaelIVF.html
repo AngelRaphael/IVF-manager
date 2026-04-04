@@ -2759,13 +2759,21 @@ async function openDailyLogModal(editId=null) {
     const data = await apiGet('業務日報');
     const r = data.find(d=>d['紀錄ID']===editId);
     if(r) {
-      document.getElementById('logDate').value = r['日期']||'';
+      // 日期可能是 Date 物件或字串，統一轉成 YYYY-MM-DD
+      let dateVal = '';
+      if(r['日期']) {
+        const d = r['日期'] instanceof Date ? r['日期'] : new Date(r['日期']);
+        if(!isNaN(d)) dateVal = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        else dateVal = String(r['日期']).slice(0,10);
+      }
+      document.getElementById('logDate').value = dateVal;
       document.getElementById('logContact').value = r['聯絡人']||'';
       document.getElementById('logType').value = r['拜訪類型']||'出貨拜訪';
       document.getElementById('logContent').value = r['討論內容']||'';
       document.getElementById('logAction').value = r['後續行動']||'';
       document.getElementById('logNote').value = r['備註']||'';
-      setTimeout(()=>{ document.getElementById('logHospWrap')._setValue?.(r['院所ID']||''); }, 100);
+      // 院所下拉：等 DOM 建好後設值
+      setTimeout(()=>{ document.getElementById('logHospWrap')._setValue?.(r['院所ID']||''); }, 150);
     }
   } else {
     document.getElementById('logDate').value = nowTW().toISOString().split('T')[0];
