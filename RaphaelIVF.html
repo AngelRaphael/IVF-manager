@@ -2396,17 +2396,29 @@ async function coaHandleFile(file) {
     // 比對產品品名（用產品型號查品名欄位，支援模糊比對）
     coaMsg('比對產品資料中…','info');
     const products = await apiGet('產品資料');
-    const prodMap = {};
+    const prodMap = {}; // 品名（用於檔名）
+    const prodNameMap = {}; // 產品名稱（用於顯示）
     products.forEach(p=>{ 
       const key = String(p['產品型號']||'').trim().toUpperCase();
-      if(key) prodMap[key] = String(p['品名']||p['產品名稱']||'').trim();
+      if(key) {
+        prodMap[key] = String(p['品名']||'').trim();
+        prodNameMap[key] = String(p['產品名稱']||p['品名']||'').trim();
+      }
     });
 
     function lookupProdName(itemNo) {
       const key = itemNo.trim().toUpperCase();
       if(prodMap[key]) return prodMap[key];
-      // 模糊比對
       for(const [k, v] of Object.entries(prodMap)) {
+        if(key.includes(k) || k.includes(key)) return v;
+      }
+      return '';
+    }
+
+    function lookupProdFullName(itemNo) {
+      const key = itemNo.trim().toUpperCase();
+      if(prodNameMap[key]) return prodNameMap[key];
+      for(const [k, v] of Object.entries(prodNameMap)) {
         if(key.includes(k) || k.includes(key)) return v;
       }
       return '';
@@ -2418,7 +2430,8 @@ async function coaHandleFile(file) {
 
     _coaItems = unique.map(item=>({
       itemNo: item.itemNo,
-      productName: lookupProdName(item.itemNo),
+      productName: lookupProdFullName(item.itemNo), // 顯示用：產品名稱
+      shortName: lookupProdName(item.itemNo),        // 檔名用：品名
       lotNo: item.lotNo,
       expiryDate: item.expiryDate,
       downloaded: downloaded.has(item.lotNo),
@@ -2483,7 +2496,7 @@ async function coaDownloadSelected() {
   let success=0, fail=0;
   for(const item of selected) {
     const exp6 = coaFmtExpiry6(item.expiryDate);
-    const name = item.productName||item.itemNo;
+    const name = item.shortName || item.productName || item.itemNo;
     const filename = `CoA ${item.lotNo}~${exp6}~${name}.pdf`;
     try {
       const res = await fetch(`${API}?action=downloadCoA&key=${_sessionKey}&lotNo=${encodeURIComponent(item.lotNo)}`);
